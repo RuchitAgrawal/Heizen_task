@@ -7,12 +7,14 @@ import { DASHBOARD_ORDER, Me } from '@fernleaf/shared';
 import { ApiError, post } from '@/lib/api';
 import { Button, ErrorText, Field, Input } from '@/components/ui';
 
-/** Same-origin path only. Resolving the URL also catches "/\\evil.com" and similar tricks. */
+/** Same-origin path only. A path like "//host" would be protocol-relative, so reject it too. */
 function safeNext(next: string | null): string | null {
   if (!next) return null;
   try {
     const u = new URL(next, window.location.origin);
-    return u.origin === window.location.origin ? u.pathname + u.search + u.hash : null;
+    if (u.origin !== window.location.origin) return null;
+    const path = u.pathname + u.search + u.hash;
+    return /^\/(?![\/\\])/.test(path) ? path : null;
   } catch {
     return null;
   }
