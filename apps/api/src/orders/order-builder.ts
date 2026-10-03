@@ -151,7 +151,8 @@ export class OrderBuilder {
       }
       const rules = groupRules(dish);
       for (const issue of validateCombinations(line.quantity, line.combinations as CombinationInput[], rules)) {
-        errors[`${at}.${issue.path}`] ??= issue.message;
+        const key = `${at}.${issue.path}`;
+        errors[key] = errors[key] ? `${errors[key]}; ${issue.message}` : issue.message;
       }
       if (Object.keys(errors).some((k) => k.startsWith(`${at}.`))) return;
 
