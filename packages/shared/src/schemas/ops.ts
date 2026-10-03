@@ -1,23 +1,13 @@
 import { z } from 'zod';
-import { cents, id, isoDate, minutesOfDay } from './common';
+import { cents, id, isoDate } from './common';
 
 export const boardQuery = z.object({ date: isoDate.optional(), stationId: z.string().optional() });
 
-export const dropKeySchema = z.object({
-  deliveryDate: isoDate,
-  companyId: id,
-  addressId: id,
-  deliveryTimeMin: minutesOfDay,
-});
-export type DropKey = z.infer<typeof dropKeySchema>;
-
-export const assignDriverSchema = dropKeySchema.extend({ driverId: id.nullable() });
-export const dropAdvanceSchema = dropKeySchema.extend({
-  stage: z.enum(['DISPATCH_READY', 'OUT_FOR_DELIVERY']),
-});
-export const deliverSchema = dropKeySchema.extend({
+export const assignDriverSchema = z.object({ driverId: id.nullable() });
+export const dropAdvanceSchema = z.object({ stage: z.enum(['DISPATCH_READY', 'OUT_FOR_DELIVERY']) });
+export const deliverSchema = z.object({
   note: z.string().trim().max(1000).default(''),
-  /** data: URL of a compressed JPEG, at most ~1.5 MB. */
+  /** data: URL of a JPEG/PNG/WebP, compressed in the browser. */
   photoDataUrl: z
     .string()
     .regex(/^data:image\/(jpeg|png|webp);base64,/, 'Photo must be an image')
