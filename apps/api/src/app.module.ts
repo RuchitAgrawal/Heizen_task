@@ -9,10 +9,11 @@ import { DemoModule } from './demo/demo.module';
 import { KitchenModule } from './kitchen/kitchen.module';
 import { DispatchModule } from './dispatch/dispatch.module';
 import { BillingModule } from './billing/billing.module';
+import { DashboardsModule } from './dashboards/dashboards.module';
 import { HealthController } from './health.controller';
 
 @Module({
-  imports: [ScheduleModule.forRoot(), CoreModule, AuthModule, CatalogModule, CompaniesModule, OrdersModule, KitchenModule, DispatchModule, BillingModule, DemoModule],
+  imports: [ScheduleModule.forRoot(), CoreModule, AuthModule, CatalogModule, CompaniesModule, OrdersModule, KitchenModule, DispatchModule, BillingModule, DashboardsModule, DemoModule],
   controllers: [HealthController],
 })
 export class AppModule {}

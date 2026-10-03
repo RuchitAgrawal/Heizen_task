@@ -1,13 +1,14 @@
 import { Test } from '@nestjs/testing';
 import { PERMISSIONS, Permission, ROLE_PRESETS } from '@fernleaf/shared';
 import { AppModule } from '../src/app.module';
+import { configureApp } from '../src/configure';
 import { PrismaService } from '../src/common/prisma.service';
 import { Clock } from '../src/common/clock';
 import type { AuthUser } from '../src/auth/auth.types';
 
 export async function bootApp() {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-  const app = moduleRef.createNestApplication({ logger: false });
+  const app = configureApp(moduleRef.createNestApplication({ logger: false }));
   await app.init();
   return { app, prisma: app.get(PrismaService), clock: app.get(Clock), get: app.get.bind(app) };
 }
