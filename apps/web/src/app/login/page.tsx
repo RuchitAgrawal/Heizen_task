@@ -7,6 +7,17 @@ import { DASHBOARD_ORDER, Me } from '@fernleaf/shared';
 import { ApiError, post } from '@/lib/api';
 import { Button, ErrorText, Field, Input } from '@/components/ui';
 
+/** Same-origin path only. Resolving the URL also catches "/\\evil.com" and similar tricks. */
+function safeNext(next: string | null): string | null {
+  if (!next) return null;
+  try {
+    const u = new URL(next, window.location.origin);
+    return u.origin === window.location.origin ? u.pathname + u.search + u.hash : null;
+  } catch {
+    return null;
+  }
+}
+
 function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
@@ -25,8 +36,8 @@ function LoginForm() {
       const me = await post<Me>('/auth/login', { email, password });
       qc.setQueryData(['me'], me);
       const home = DASHBOARD_ORDER.find((d) => me.permissions.includes(d.permission))?.path ?? '/orders';
-      const next = params.get('next');
-      router.replace(next && next !== '/' && next.startsWith('/') && !next.startsWith('//') ? next : home);
+      const next = safeNext(params.get('next'));
+      router.replace(next && next !== '/' ? next : home);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not sign in');
       setFieldErrors(err instanceof ApiError ? err.fieldErrors : {});
