@@ -11,16 +11,19 @@
     "test": "vitest run",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
-    "db:seed": "tsx prisma/seed.ts",
+    "db:seed": "node -r @swc-node/register prisma/seed.ts",
     "db:reset": "prisma migrate reset --force",
     "db:dev": "node scripts/dev-db.mjs"
   },
   "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "seed": "node -r @swc-node/register prisma/seed.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "@nestjs/cli": "^11.0.24",
+    "@nestjs/testing": "^11.2.7",
+    "@swc-node/register": "^1.12.1",
+    "@swc/core": "^1.16.13",
     "@types/bcryptjs": "^3.0.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.6",
@@ -34,6 +37,7 @@
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.71.0",
+    "unplugin-swc": "^2.0.0",
     "vitest": "^3.2.7"
   },
   "dependencies": {
