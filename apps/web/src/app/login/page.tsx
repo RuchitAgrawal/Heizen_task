@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { DASHBOARD_ORDER, Me } from '@fernleaf/shared';
@@ -29,6 +29,9 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  // Before hydration a click would do a native form submit and just reload the page.
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -60,7 +63,7 @@ function LoginForm() {
         <Input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
       </Field>
       <ErrorText>{error}</ErrorText>
-      <Button variant="primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</Button>
+      <Button variant="primary" disabled={busy || !ready}>{busy ? 'Signing in…' : 'Sign in'}</Button>
     </form>
   );
 }

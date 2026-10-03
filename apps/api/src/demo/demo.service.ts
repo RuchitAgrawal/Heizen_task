@@ -260,13 +260,12 @@ export class DemoService implements OnApplicationBootstrap {
 
     const rng = rngFor(`shape:${today}`);
     const now = this.clock.now();
-    const earliestTime = orders[0].deliveryTimeMin;
     let shaped = 0;
     for (const o of orders) {
       const roll = rng.next();
       const startedAt = new Date(Math.min(now.getTime(), o.plannedKitchenReadyAt.getTime() - 75 * MIN));
-      if (o.deliveryTimeMin === earliestTime && roll < 0.6) {
-        // Earliest slot: cooked and packed, one step from leaving.
+      if (o.dropId === orders[0].dropId) {
+        // Earliest drop: fully cooked, so it can go out with the review driver.
         const readyAt = new Date(Math.min(now.getTime(), o.plannedKitchenReadyAt.getTime() - 5 * MIN));
         await this.prisma.orderCombination.updateMany({ where: { orderId: o.id }, data: { startedAt, doneAt: readyAt } });
         await this.prisma.order.update({ where: { id: o.id }, data: { kitchenStartedAt: startedAt, kitchenReadyAt: readyAt } });
@@ -284,6 +283,24 @@ export class DemoService implements OnApplicationBootstrap {
       } else continue;
       shaped++;
     }
+    // Fully cooked drops move on, so the driver account has something to deliver right away:
+    // the first goes out for delivery with the review driver, the rest wait at dispatch.
+    const cooked = await this.prisma.drop.findMany({
+      where: { id: { in: dropIds }, orders: { every: { OR: [{ status: { not: 'CONFIRMED' } }, { kitchenReadyAt: { not: null } }] } } },
+      include: { orders: { where: { status: 'CONFIRMED' } } },
+      orderBy: { deliveryTimeMin: 'asc' },
+    });
+    for (const [i, drop] of cooked.entries()) {
+      const ids = drop.orders.map((o) => o.id);
+      if (!ids.length) continue;
+      const out = i === 0 && reviewDriver;
+      if (out) await this.prisma.drop.update({ where: { id: drop.id }, data: { driverId: reviewDriver.id } });
+      await this.prisma.order.updateMany({
+        where: { id: { in: ids } },
+        data: { dispatchReadyAt: new Date(now.getTime() - 20 * MIN), ...(out ? { outForDeliveryAt: new Date(now.getTime() - 10 * MIN) } : {}) },
+      });
+    }
+
     await this.prisma.orderEvent.create({
       data: { orderId: orders[0].id, type: 'DEMO_SHAPED', message: 'Demo progress applied for today', actorName: 'System', actorId: DEMO_ACTOR },
     });
