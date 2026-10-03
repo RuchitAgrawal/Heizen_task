@@ -1,0 +1,620 @@
+// Money is integer cents. Calendar dates are `date` columns (kitchen-zone dates).
+// Instants are timestamptz in UTC. Times of day are minutes after local midnight.
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
+}
+
+// ─── Staff and access ────────────────────────────────────────────────
+
+/// A role is data. Its permission list is checked by the API; code never checks role names.
+model Role {
+  id          String      @id @default(cuid())
+  key         String      @unique
+  name        String
+  permissions String[]
+  staff       StaffUser[]
+}
+
+model StaffUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  roleId       String
+  role         Role     @relation(fields: [roleId], references: [id])
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  defaultForCompanies Company[] @relation("CompanyDefaultDriver")
+  drops               Drop[]
+}
+
+// ─── Reference data ──────────────────────────────────────────────────
+
+model Allergen {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  sortOrder Int        @default(0)
+  active    Boolean    @default(true)
+  dishes    Dish[]
+  options   Option[]
+  employees Employee[]
+}
+
+model DietaryTag {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  sortOrder Int        @default(0)
+  active    Boolean    @default(true)
+  dishes    Dish[]
+  options   Option[]
+  employees Employee[]
+}
+
+model KitchenStation {
+  id        String  @id @default(cuid())
+  name      String  @unique
+  sortOrder Int     @default(0)
+  active    Boolean @default(true)
+  dishes    Dish[]
+}
+
+model PortionSize {
+  id        String               @id @default(cuid())
+  name      String               @unique
+  sortOrder Int                  @default(0)
+  active    Boolean              @default(true)
+  options   Option[]
+  groups    OptionGroupPortion[]
+}
+
+model PackagingType {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  sortOrder Int       @default(0)
+  active    Boolean   @default(true)
+  companies Company[]
+}
+
+// ─── Catalogue ───────────────────────────────────────────────────────
+
+enum Temperature {
+  HOT
+  COLD
+}
+
+/// Never hard-deleted: orders snapshot it but still link to it.
+model Dish {
+  id            String              @id @default(cuid())
+  name          String
+  description   String              @default("")
+  imageUrl      String              @default("")
+  sku           String              @unique
+  temperature   Temperature
+  costCents     Int
+  stationId     String?
+  station       KitchenStation?     @relation(fields: [stationId], references: [id])
+  minOrderQty   Int?
+  active        Boolean             @default(true)
+  allergens     Allergen[]
+  dietaryTags   DietaryTag[]
+  groups        OptionGroup[]
+  prices        DishPrice[]
+  categoryItems CategoryItem[]
+  hiddenFor     CompanyHiddenDish[]
+  orderLines    OrderLine[]
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+}
+
+/// A reusable choice (paneer, jeera rice) shared by many dishes' groups.
+model Option {
+  id           String            @id @default(cuid())
+  name         String            @unique
+  costCents    Int
+  active       Boolean           @default(true)
+  allergens    Allergen[]
+  dietaryTags  DietaryTag[]
+  /// Sizes this option can be sold in.
+  portionSizes PortionSize[]
+  prices       OptionPrice[]
+  groupItems   OptionGroupItem[]
+}
+
+model OptionGroup {
+  id           String               @id @default(cuid())
+  dishId       String
+  dish         Dish                 @relation(fields: [dishId], references: [id], onDelete: Cascade)
+  name         String
+  required     Boolean
+  sortOrder    Int                  @default(0)
+  usesPortions Boolean              @default(false)
+  items        OptionGroupItem[]
+  portions     OptionGroupPortion[]
+
+  @@index([dishId])
+}
+
+model OptionGroupItem {
+  id        String      @id @default(cuid())
+  groupId   String
+  group     OptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  optionId  String
+  option    Option      @relation(fields: [optionId], references: [id])
+  sortOrder Int
+
+  @@unique([groupId, optionId])
+}
+
+/// The sizes a group sells, each with its extra charge on top of the option's price.
+model OptionGroupPortion {
+  id            String      @id @default(cuid())
+  groupId       String
+  group         OptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  portionSizeId String
+  portionSize   PortionSize @relation(fields: [portionSizeId], references: [id])
+  extraCents    Int
+
+  @@unique([groupId, portionSizeId])
+}
+
+// ─── Pricing ─────────────────────────────────────────────────────────
+
+enum TierRule {
+  /// Only stored prices count.
+  MANUAL
+  /// cost × multiplier, rounded up to 5 cents, unless a stored price overrides it.
+  COST_MULTIPLIER
+  /// base tier's effective price × multiplier, rounded up to 5 cents, unless overridden.
+  TIER_MARKUP
+}
+
+/// Exactly one tier has isDefault = true (partial unique index in the migration).
+model PriceTier {
+  id           String        @id @default(cuid())
+  name         String        @unique
+  isDefault    Boolean       @default(false)
+  rule         TierRule      @default(MANUAL)
+  /// Basis points: 24000 = × 2.4, 11500 = + 15%.
+  multiplierBp Int?
+  baseTierId   String?
+  baseTier     PriceTier?    @relation("TierBase", fields: [baseTierId], references: [id])
+  derivedTiers PriceTier[]   @relation("TierBase")
+  sortOrder    Int           @default(0)
+  dishPrices   DishPrice[]
+  optionPrices OptionPrice[]
+  companies    Company[]
+}
+
+/// A stored price: the value on a manual tier, or an override on a derived tier.
+model DishPrice {
+  tierId    String
+  tier      PriceTier @relation(fields: [tierId], references: [id], onDelete: Cascade)
+  dishId    String
+  dish      Dish      @relation(fields: [dishId], references: [id])
+  cents     Int
+  updatedAt DateTime  @updatedAt
+
+  @@id([tierId, dishId])
+}
+
+model OptionPrice {
+  tierId    String
+  tier      PriceTier @relation(fields: [tierId], references: [id], onDelete: Cascade)
+  optionId  String
+  option    Option    @relation(fields: [optionId], references: [id])
+  cents     Int
+  updatedAt DateTime  @updatedAt
+
+  @@id([tierId, optionId])
+}
+
+// ─── Menu ────────────────────────────────────────────────────────────
+
+model Category {
+  id        String                  @id @default(cuid())
+  name      String
+  slug      String                  @unique
+  sortOrder Int                     @default(0)
+  active    Boolean                 @default(true)
+  /// Not listed on the menu, but reachable by slug.
+  secret    Boolean                 @default(false)
+  items     CategoryItem[]
+  hiddenFor CompanyHiddenCategory[]
+}
+
+model CategoryItem {
+  id         String   @id @default(cuid())
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  dishId     String
+  dish       Dish     @relation(fields: [dishId], references: [id])
+  sortOrder  Int
+  active     Boolean  @default(true)
+
+  @@unique([categoryId, dishId])
+}
+
+model CompanyHiddenCategory {
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([companyId, categoryId])
+}
+
+model CompanyHiddenDish {
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  dishId    String
+  dish      Dish    @relation(fields: [dishId], references: [id])
+
+  @@id([companyId, dishId])
+}
+
+// ─── Companies and employees ─────────────────────────────────────────
+
+model Company {
+  id                     String        @id @default(cuid())
+  name                   String
+  billingName            String
+  billingEmail           String
+  billingPhone           String        @default("")
+  ownerEmployeeId        String?       @unique
+  owner                  Employee?     @relation("CompanyOwner", fields: [ownerEmployeeId], references: [id])
+  /// ISO weekdays, 1 = Monday.
+  workingDays            Int[]         @default([1, 2, 3, 4, 5])
+  defaultDeliveryTimeMin Int
+  /// Minutes before delivery the order must leave the kitchen.
+  deliveryLeadMin        Int           @default(60)
+  defaultPackagingTypeId String
+  defaultPackagingType   PackagingType @relation(fields: [defaultPackagingTypeId], references: [id])
+  driverInstructions     String        @default("")
+  defaultDriverId        String?
+  defaultDriver          StaffUser?    @relation("CompanyDefaultDriver", fields: [defaultDriverId], references: [id])
+  /// Null = default tier.
+  priceTierId            String?
+  priceTier              PriceTier?    @relation(fields: [priceTierId], references: [id])
+  active                 Boolean       @default(true)
+  createdAt              DateTime      @default(now())
+
+  domains          CompanyDomain[]
+  addresses        CompanyAddress[]
+  holidays         CompanyHoliday[]
+  employees        Employee[]              @relation("CompanyEmployees")
+  hiddenCategories CompanyHiddenCategory[]
+  hiddenDishes     CompanyHiddenDish[]
+  orders           Order[]
+  invoices         Invoice[]
+  adjustments      BillingAdjustment[]
+  drops            Drop[]
+}
+
+model CompanyDomain {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  /// Lower-case. Unique across all companies.
+  domain    String  @unique
+}
+
+/// Soft-deleted only, because orders and drops reference it.
+model CompanyAddress {
+  id         String  @id @default(cuid())
+  companyId  String
+  company    Company @relation(fields: [companyId], references: [id])
+  label      String
+  line1      String
+  line2      String  @default("")
+  city       String
+  postalCode String
+  isDefault  Boolean @default(false)
+  active     Boolean @default(true)
+  orders     Order[]
+  drops      Drop[]
+
+  @@index([companyId])
+}
+
+model CompanyHoliday {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  date      DateTime @db.Date
+  name      String
+
+  @@unique([companyId, date])
+}
+
+model Employee {
+  id                    String       @id @default(cuid())
+  companyId             String
+  company               Company      @relation("CompanyEmployees", fields: [companyId], references: [id])
+  name                  String
+  email                 String       @unique
+  canChooseAddress      Boolean      @default(false)
+  canChangeDeliveryTime Boolean      @default(false)
+  canChangePackaging    Boolean      @default(false)
+  active                Boolean      @default(true)
+  allergens             Allergen[]
+  dietaryTags           DietaryTag[]
+  ownerOf               Company?     @relation("CompanyOwner")
+  orders                Order[]
+  createdAt             DateTime     @default(now())
+
+  @@index([companyId])
+}
+
+// ─── Settings ────────────────────────────────────────────────────────
+
+/// Singleton row, id = 1.
+model KitchenSettings {
+  id               Int      @id @default(1)
+  timeZone         String   @default("America/New_York")
+  cutoffTimeMin    Int      @default(960)
+  cutoffDays       Int      @default(2)
+  workingDays      Int[]    @default([1, 2, 3, 4, 5])
+  /// kitchen-ready = dispatch-ready − this.
+  kitchenBufferMin Int      @default(30)
+  /// Work due within this many minutes is "at risk" on the boards.
+  atRiskWindowMin  Int      @default(30)
+  /// A delivery up to this many minutes after the slot still counts as on time.
+  onTimeGraceMin   Int      @default(10)
+  updatedAt        DateTime @updatedAt
+}
+
+model KitchenHoliday {
+  date DateTime @id @db.Date
+  name String
+}
+
+// ─── Orders ──────────────────────────────────────────────────────────
+
+enum OrderStatus {
+  DRAFT
+  PLACED
+  CONFIRMED
+  DELIVERED
+  CANCELLED
+  REJECTED
+}
+
+model Order {
+  id     String      @id @default(cuid())
+  /// Human reference shown to staff, e.g. #1042.
+  number Int         @unique @default(autoincrement())
+  status OrderStatus @default(DRAFT)
+
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  /// The employee's company when the order was created. Billing follows this, not the employee.
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id])
+
+  deliveryDate    DateTime       @db.Date
+  deliveryTimeMin Int
+  addressId       String
+  address         CompanyAddress @relation(fields: [addressId], references: [id])
+  /// Snapshot so the label survives address edits.
+  addressText     String
+  packagingTypeId String
+  packagingName   String
+  notes           String         @default("")
+
+  /// Tier used for pricing, kept for the record.
+  priceTierId   String
+  priceTierName String
+  totalCents    Int    @default(0)
+
+  /// Planned times, recomputed whenever delivery time changes.
+  deliveryAt             DateTime
+  plannedDispatchReadyAt DateTime
+  plannedKitchenReadyAt  DateTime
+
+  placedAt         DateTime?
+  confirmedAt      DateTime?
+  cancelledAt      DateTime?
+  rejectedAt       DateTime?
+  kitchenStartedAt DateTime?
+  kitchenReadyAt   DateTime?
+  dispatchReadyAt  DateTime?
+  outForDeliveryAt DateTime?
+  deliveredAt      DateTime?
+  onTime           Boolean?
+
+  dropId String?
+  drop   Drop?   @relation(fields: [dropId], references: [id])
+
+  invoiceId     String?
+  invoice       Invoice? @relation(fields: [invoiceId], references: [id])
+  /// Amount billed on the invoice; equals totalCents at invoicing.
+  invoicedCents Int?
+
+  /// Optimistic lock for edits.
+  version     Int      @default(0)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  lines        OrderLine[]
+  combinations OrderCombination[]
+  events       OrderEvent[]
+  adjustments  BillingAdjustment[]
+
+  @@index([deliveryDate, status])
+  @@index([companyId, deliveryDate])
+  @@index([employeeId])
+  @@index([invoiceId])
+  @@index([dropId])
+}
+
+/// One dish on an order, with everything it needs copied in.
+model OrderLine {
+  id             String             @id @default(cuid())
+  orderId        String
+  order          Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  dishId         String
+  dish           Dish               @relation(fields: [dishId], references: [id])
+  dishName       String
+  dishSku        String
+  temperature    Temperature
+  stationId      String?
+  stationName    String?
+  /// Dish price on the tier at the time of ordering.
+  dishPriceCents Int
+  quantity       Int
+  totalCents     Int
+  sortOrder      Int
+  combinations   OrderCombination[]
+
+  @@index([orderId])
+}
+
+/// A distinct combination on a line. This is also the kitchen prep unit.
+model OrderCombination {
+  id          String                   @id @default(cuid())
+  lineId      String
+  line        OrderLine                @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  /// Denormalised for the kitchen board query.
+  orderId     String
+  order       Order                    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  stationId   String?
+  quantity    Int
+  unitCents   Int
+  totalCents  Int
+  signature   String
+  /// "Brown rice, Paneer (Large)"
+  label       String
+  startedAt   DateTime?
+  startedById String?
+  doneAt      DateTime?
+  doneById    String?
+  choices     OrderCombinationChoice[]
+
+  @@index([orderId])
+  @@index([stationId])
+}
+
+model OrderCombinationChoice {
+  id                String           @id @default(cuid())
+  combinationId     String
+  combination       OrderCombination @relation(fields: [combinationId], references: [id], onDelete: Cascade)
+  groupId           String
+  groupName         String
+  optionId          String
+  optionName        String
+  portionSizeId     String?
+  portionName       String?
+  optionCents       Int
+  portionExtraCents Int              @default(0)
+}
+
+/// Timeline entries on the order detail page.
+model OrderEvent {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  type      String
+  message   String
+  actorId   String?
+  actorName String?
+  at        DateTime @default(now())
+
+  @@index([orderId, at])
+}
+
+/// Cut-off processing log. Processing is idempotent without it; this records when it ran.
+model CutoffRun {
+  id           String   @id @default(cuid())
+  deliveryDate DateTime @db.Date
+  ranAt        DateTime @default(now())
+  trigger      String
+  cancelled    Int
+  confirmed    Int
+
+  @@index([deliveryDate])
+}
+
+// ─── Dispatch ────────────────────────────────────────────────────────
+
+/// Orders for the same company, address and exact delivery time on one date.
+model Drop {
+  id              String         @id @default(cuid())
+  deliveryDate    DateTime       @db.Date
+  companyId       String
+  company         Company        @relation(fields: [companyId], references: [id])
+  addressId       String
+  address         CompanyAddress @relation(fields: [addressId], references: [id])
+  deliveryTimeMin Int
+  driverId        String?
+  driver          StaffUser?     @relation(fields: [driverId], references: [id])
+  deliveredAt     DateTime?
+  deliveredById   String?
+  onTime          Boolean?
+  deliveryNote    String         @default("")
+  photo           DeliveryPhoto?
+  orders          Order[]
+
+  @@unique([deliveryDate, companyId, addressId, deliveryTimeMin])
+  @@index([driverId, deliveryDate])
+}
+
+model DeliveryPhoto {
+  dropId    String   @id
+  drop      Drop     @relation(fields: [dropId], references: [id], onDelete: Cascade)
+  mimeType  String
+  data      Bytes
+  createdAt DateTime @default(now())
+}
+
+// ─── Billing ─────────────────────────────────────────────────────────
+
+enum InvoiceStatus {
+  ISSUED
+  PAID
+}
+
+/// Internal record. Immutable once issued except for being marked paid.
+model Invoice {
+  id          String              @id @default(cuid())
+  number      Int                 @unique @default(autoincrement())
+  companyId   String
+  company     Company             @relation(fields: [companyId], references: [id])
+  status      InvoiceStatus       @default(ISSUED)
+  /// Sum of invoicedCents of its orders + its adjustments.
+  totalCents  Int
+  issuedAt    DateTime            @default(now())
+  paidAt      DateTime?
+  createdById String?
+  orders      Order[]
+  adjustments BillingAdjustment[]
+
+  @@index([companyId])
+}
+
+/// A change to what a company owes for an order that is already invoiced
+/// (cancellation, short delivery). Billed on the next invoice.
+model BillingAdjustment {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id])
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id])
+  amountCents Int
+  reason      String
+  invoiceId   String?
+  invoice     Invoice? @relation(fields: [invoiceId], references: [id])
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([companyId, invoiceId])
+}
