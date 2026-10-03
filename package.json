@@ -1,0 +1,16 @@
+{
+  "name": "fernleaf",
+  "private": true,
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter ./apps/* dev",
+    "build": "pnpm --filter @fernleaf/shared build && pnpm --filter api build && pnpm --filter web build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "db:dev": "pnpm --filter api db:dev"
+  }
+}
