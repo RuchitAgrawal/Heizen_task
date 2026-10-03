@@ -64,14 +64,14 @@ describe('kitchen units', () => {
     // Two people press "done" on the same unit at the same moment.
     const both = await Promise.allSettled([kitchen.done(a.id, cook), kitchen.done(a.id, cook)]);
     expect(both.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-    let order = await ctx.prisma.order.findUniqueOrThrow({ where: { id: o.id } });
-    expect(order.kitchenStartedAt).not.toBeNull();
-    expect(order.kitchenReadyAt).toBeNull();
+    const midway = await ctx.prisma.order.findUniqueOrThrow({ where: { id: o.id } });
+    expect(midway.kitchenStartedAt).not.toBeNull();
+    expect(midway.kitchenReadyAt).toBeNull();
 
     ctx.clock.set(ny('2026-10-13T16:20:00'));
     const doneB = await kitchen.done(b.id, cook);
     expect(doneB!.startedAt!.toISOString()).toBe(doneB!.doneAt!.toISOString());
-    order = await ctx.prisma.order.findUniqueOrThrow({ where: { id: o.id }, include: { events: true } });
+    const order = await ctx.prisma.order.findUniqueOrThrow({ where: { id: o.id }, include: { events: true } });
     expect(order.kitchenReadyAt!.toISOString()).toBe(ny('2026-10-13T16:20:00').toISOString());
     expect(order.events.filter((e) => e.type === 'KITCHEN_STARTED')).toHaveLength(1);
     expect(order.events.filter((e) => e.type === 'KITCHEN_READY')).toHaveLength(1);
