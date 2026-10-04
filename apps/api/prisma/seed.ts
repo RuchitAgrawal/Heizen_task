@@ -173,7 +173,7 @@ async function main() {
   // Settings: New York kitchen open 7 days, cut-off 2 working days before at 16:00
   // Seven days so the demo has deliveries on any review day; weekends are lighter because
   // only Kestrel (Mon-Sat) and Copperleaf (Wed-Sun) take weekend deliveries.
-  await prisma.kitchenSettings.create({ data: { id: 1, workingDays: [1, 2, 3, 4, 5, 6, 7] } });
+  await prisma.kitchenSettings.upsert({ where: { id: 1 }, update: { workingDays: [1, 2, 3, 4, 5, 6, 7] }, create: { id: 1, workingDays: [1, 2, 3, 4, 5, 6, 7] } });
   const holidays = [
     ['2026-11-26', 'Thanksgiving'],
     ['2026-12-25', 'Christmas Day'],

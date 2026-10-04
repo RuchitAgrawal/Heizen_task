@@ -72,7 +72,7 @@ export class OrdersService {
       await this.writeLines(tx, order.id, built);
       await logEvent(tx, order.id, input.place ? 'PLACED' : 'DRAFTED', input.place ? 'Order placed' : 'Saved as draft', user);
       return order;
-    });
+    }, { timeout: 30000 });
   }
 
   /** Throws unless the order is still editable by this user right now. */
