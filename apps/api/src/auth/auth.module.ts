@@ -5,6 +5,7 @@ import { AuthController } from './auth.controller';
 import { AuthGuard } from './auth.guard';
 import { SESSION_DAYS } from './auth.constants';
 import { StaffController } from '../staff/staff.controller';
+import { LoginThrottle } from './login-throttle';
 
 @Module({
   imports: [
@@ -18,6 +19,6 @@ import { StaffController } from '../staff/staff.controller';
     }),
   ],
   controllers: [AuthController, StaffController],
-  providers: [{ provide: APP_GUARD, useClass: AuthGuard }],
+  providers: [LoginThrottle, { provide: APP_GUARD, useClass: AuthGuard }],
 })
 export class AuthModule {}

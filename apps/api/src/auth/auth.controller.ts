@@ -1,7 +1,7 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Res } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { loginSchema, LoginInput, Me, isPermission } from '@fernleaf/shared';
 import { PrismaService } from '../common/prisma.service';
 import { AppError } from '../common/errors';
@@ -9,6 +9,7 @@ import { ZodPipe } from '../common/zod.pipe';
 import { CurrentUser, Public, SignedIn } from './decorators';
 import type { AuthUser } from './auth.types';
 import { SESSION_COOKIE, SESSION_DAYS } from './auth.constants';
+import { LoginThrottle } from './login-throttle';
 
 /** Compared against when the email is unknown, so timing does not reveal which emails exist. */
 const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 10);
@@ -18,17 +19,22 @@ export class AuthController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly throttle: LoginThrottle,
   ) {}
 
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async login(@Body(new ZodPipe(loginSchema)) body: LoginInput, @Res({ passthrough: true }) res: Response): Promise<Me> {
+  async login(@Body(new ZodPipe(loginSchema)) body: LoginInput, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<Me> {
+    const throttleKey = `${req.ip}:${body.email.trim().toLowerCase()}`;
+    this.throttle.assertAllowed(throttleKey);
     const staff = await this.prisma.staffUser.findUnique({ where: { email: body.email }, include: { role: true } });
     const ok = await bcrypt.compare(body.password, staff?.passwordHash ?? DUMMY_HASH);
     if (!staff || !staff.active || !ok) {
+      this.throttle.failed(throttleKey);
       throw new AppError(HttpStatus.UNAUTHORIZED, 'BAD_CREDENTIALS', 'Email or password is wrong');
     }
+    this.throttle.succeeded(throttleKey);
     const token = await this.jwt.signAsync({ sub: staff.id });
     res.cookie(SESSION_COOKIE, token, {
       httpOnly: true,
