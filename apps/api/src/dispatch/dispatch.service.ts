@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { IsoDate, formatMinutes, urgency } from '@fernleaf/shared';
 import { PrismaService, Tx } from '../common/prisma.service';
 import { Clock } from '../common/clock';
+import { Notifier } from '../common/notifier';
 import { conflict, forbidden, invalid, notFound } from '../common/errors';
 import { fromDbDate, toDbDate } from '../common/dates';
 import { SettingsService } from '../settings/settings.service';
@@ -58,6 +59,7 @@ export class DispatchService {
     private readonly prisma: PrismaService,
     private readonly settings: SettingsService,
     private readonly clock: Clock,
+    private readonly notifier: Notifier,
   ) {}
 
   private shape(d: Awaited<ReturnType<typeof this.fetchDrops>>[number], atRiskWindowMin: number) {
@@ -175,7 +177,7 @@ export class DispatchService {
    * On time = delivered no later than the delivery slot plus the grace minutes in settings.
    */
   async deliver(dropId: string, input: { note: string; photoDataUrl: string | null }, user: AuthUser) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const drop = await this.lockDrop(tx, dropId);
       if (!can(user, 'dispatch.work')) {
         if (drop.driverId !== user.id) throw forbidden('This is not your delivery');
@@ -203,8 +205,11 @@ export class DispatchService {
       }
       const late = onTime ? '' : ` (late by ${Math.round((now.getTime() - deliveryAt.getTime()) / 60_000)} min)`;
       await logEvents(tx, orders.map((o) => o.id), 'DELIVERED', `Delivered${late}${input.note ? `: ${input.note}` : ''}`, user);
-      return { ok: true, onTime };
+      return { ok: true, onTime, orderIds: orders.map((o) => o.id) };
     });
+    const delivered = await this.prisma.order.findMany({ where: { id: { in: result.orderIds } }, select: { number: true, employee: { select: { email: true } } } });
+    for (const o of delivered) this.notifier.send(o.employee.email, `Order #${o.number} has been delivered`);
+    return { ok: true, onTime: result.onTime };
   }
 
   async photo(dropId: string, user: AuthUser) {

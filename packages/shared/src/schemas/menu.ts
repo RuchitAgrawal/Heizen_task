@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { id, isoDate, nonEmpty } from './common';
+import { id, nonEmpty } from './common';
 
 export const categorySchema = z.object({
   name: nonEmpty('Name'),
@@ -17,7 +17,6 @@ export const menuPreviewQuery = z.object({
   employeeId: id,
   /** Secret categories are included only when reached by slug. */
   categorySlug: z.string().optional(),
-  date: isoDate.optional(),
 });
 
 export interface MenuOption {

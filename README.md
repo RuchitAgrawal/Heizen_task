@@ -241,6 +241,7 @@ Today's own drops in time order, count to go and delivered, address with a maps 
 - **Image upload for dishes**: dishes take an image URL. Upload needs object storage; the driver photo shows the upload path works.
 - **Bulk "price from cost" actions**: derived tiers already cover "cost × 2.4". A one-off "fill missing prices from cost" button would be quicker for gaps on manual tiers, but is not needed for correctness.
 - **Out of scope per section 5**: payments, exports, audit logs (the order timeline covers order history only), notifications, tax, fees, customer app.
+- **Emails are log lines**: where an email would go out (order confirmed or draft cancelled at cut-off, invoice issued, order delivered), the API logs `[Email] would email <to>: <subject>` after the change commits.
 
 ### Next, with more time
 

@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { BILLABLE_STATUSES } from '@fernleaf/shared';
 import { PrismaService } from '../common/prisma.service';
 import { Clock } from '../common/clock';
+import { Notifier } from '../common/notifier';
 import { conflict, invalid, notFound } from '../common/errors';
 import { fromDbDate } from '../common/dates';
 import type { AuthUser } from '../auth/auth.types';
@@ -21,6 +22,7 @@ export class BillingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly clock: Clock,
+    private readonly notifier: Notifier,
   ) {}
 
   private uninvoicedWhere(companyId?: string): Prisma.OrderWhereInput {
@@ -73,7 +75,7 @@ export class BillingService {
   async create(input: { companyId: string; orderIds: string[]; adjustmentIds: string[] }, user: AuthUser) {
     const orderIds = [...new Set(input.orderIds)];
     const adjustmentIds = [...new Set(input.adjustmentIds)];
-    return this.prisma.$transaction(async (tx) => {
+    const invoice = await this.prisma.$transaction(async (tx) => {
       if (!(await tx.company.findUnique({ where: { id: input.companyId } }))) throw notFound('Company');
       const invoice = await tx.invoice.create({ data: { companyId: input.companyId, totalCents: 0, createdById: user.id, issuedAt: this.clock.now() } });
 
@@ -101,8 +103,10 @@ export class BillingService {
 
       const totalCents = claimed.reduce((a, o) => a + o.totalCents, 0) + adj.reduce((a, x) => a + x.amountCents, 0);
       await logEvents(tx, claimed.map((o) => o.id), 'INVOICED', `Added to invoice #${invoice.number}`, user);
-      return tx.invoice.update({ where: { id: invoice.id }, data: { totalCents } });
+      return tx.invoice.update({ where: { id: invoice.id }, data: { totalCents }, include: { company: { select: { billingEmail: true } } } });
     });
+    this.notifier.send(invoice.company.billingEmail, `Invoice #${invoice.number} issued, total ${(invoice.totalCents / 100).toFixed(2)} USD`);
+    return invoice;
   }
 
   async markPaid(id: string) {

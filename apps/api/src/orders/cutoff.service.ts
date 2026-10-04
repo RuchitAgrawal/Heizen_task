@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { IsoDate, cutoffInstant } from '@fernleaf/shared';
 import { PrismaService } from '../common/prisma.service';
 import { Clock } from '../common/clock';
+import { Notifier } from '../common/notifier';
 import { conflict } from '../common/errors';
 import { fromDbDate, toDbDate } from '../common/dates';
 import { SettingsService } from '../settings/settings.service';
@@ -34,6 +35,7 @@ export class CutoffService implements OnApplicationBootstrap {
     private readonly prisma: PrismaService,
     private readonly settings: SettingsService,
     private readonly clock: Clock,
+    private readonly notifier: Notifier,
   ) {}
 
   async onApplicationBootstrap() {
@@ -67,7 +69,7 @@ export class CutoffService implements OnApplicationBootstrap {
     if (now < cutoffAt) {
       throw conflict('CUTOFF_NOT_PASSED', `The cut-off for ${deliveryDate} is ${cutoffAt.toISOString()}; it has not passed yet`);
     }
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // Compare as text cast to date. A JS Date parameter is a timestamptz, which Postgres
       // would convert to a date in the session time zone, shifting the day off UTC servers.
       const cancelled = await tx.$queryRaw<{ id: string }[]>`
@@ -86,8 +88,17 @@ export class CutoffService implements OnApplicationBootstrap {
       if (cancelled.length || confirmed.length) {
         this.log.log(`${deliveryDate}: cancelled ${cancelled.length}, confirmed ${confirmed.length} (${trigger})`);
       }
-      return { deliveryDate, cutoffAt, cancelled: cancelled.length, confirmed: confirmed.length };
+      return { deliveryDate, cutoffAt, cancelled: cancelled.map((r) => r.id), confirmed: confirmed.map((r) => r.id) };
     });
+    // After commit, so a rolled-back run never "sends" anything.
+    const notify = await this.prisma.order.findMany({
+      where: { id: { in: [...result.confirmed, ...result.cancelled] } },
+      select: { number: true, status: true, employee: { select: { email: true } } },
+    });
+    for (const o of notify) {
+      this.notifier.send(o.employee.email, o.status === 'CONFIRMED' ? `Order #${o.number} for ${deliveryDate} is confirmed` : `Draft #${o.number} for ${deliveryDate} was cancelled at cut-off`);
+    }
+    return { deliveryDate, cutoffAt, cancelled: result.cancelled.length, confirmed: result.confirmed.length };
   }
 
   async status(from: IsoDate, to: IsoDate) {
