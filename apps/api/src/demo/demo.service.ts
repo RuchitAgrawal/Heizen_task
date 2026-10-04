@@ -79,7 +79,6 @@ export class DemoService implements OnApplicationBootstrap {
     }
   }
 
-  // 1. Fill
   private async fill(today: IsoDate): Promise<number> {
     const from = addDays(today, -14);
     const to = addDays(today, 7);
@@ -222,7 +221,6 @@ export class DemoService implements OnApplicationBootstrap {
     });
   }
 
-  // 2. Close out
   private async closeOutPast(today: IsoDate): Promise<number> {
     const stale = await this.prisma.order.findMany({
       where: { createdById: DEMO_ACTOR, deliveryDate: { lt: toDbDate(today) }, status: 'CONFIRMED', outForDeliveryAt: null },
@@ -232,7 +230,6 @@ export class DemoService implements OnApplicationBootstrap {
     return stale.length;
   }
 
-  // 3. Shape today
   private async shapeToday(today: IsoDate): Promise<number> {
     const date = toDbDate(today);
     const already = await this.prisma.orderEvent.count({ where: { type: 'DEMO_SHAPED', order: { deliveryDate: date } } });
@@ -307,7 +304,6 @@ export class DemoService implements OnApplicationBootstrap {
     return shaped;
   }
 
-  // Billing history
   /** Invoices demo orders delivered more than 7 days ago, one invoice per company per ISO week. */
   private async invoiceOldWeeks(today: IsoDate): Promise<number> {
     const orders = await this.prisma.order.findMany({

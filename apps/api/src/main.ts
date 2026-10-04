@@ -1,7 +1,6 @@
 import 'reflect-metadata';
 import { existsSync } from 'node:fs';
 
-// Local dev reads apps/api/.env; hosted environments set real env vars instead.
 if (existsSync('.env')) process.loadEnvFile('.env');
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';

@@ -32,17 +32,17 @@ Needs Node 22+ and pnpm 11+. No Docker: a local Postgres runs from an npm packag
 pnpm install
 pnpm --filter @fernleaf/shared build
 
-# terminal 1: Postgres 17 on port 54329, data in apps/api/.dev-db
+# terminal 1 – Postgres on port 54329
 pnpm db:dev
 
-# terminal 2
+# terminal 2 – API on :4000
 cp apps/api/.env.example apps/api/.env
 pnpm --filter api exec prisma migrate deploy
-pnpm --filter api db:seed          # resets the local DB: base data + ~480 demo orders
-pnpm --filter api dev              # API on :4000
+pnpm --filter api db:seed
+pnpm --filter api dev
 
-# terminal 3
-pnpm --filter web dev              # web on :3100, proxies /api to :4000
+# terminal 3 – web on :3100
+pnpm --filter web dev
 ```
 
 Checks, from the repo root:
@@ -50,10 +50,8 @@ Checks, from the repo root:
 ```bash
 pnpm lint
 pnpm typecheck
-pnpm test        # needs `pnpm db:dev` running; API tests use the fernleaf_test database
+pnpm test
 ```
-
-The seed refuses to reset a non-localhost database unless `SEED_ALLOW_REMOTE=true`.
 
 ## Architecture
 

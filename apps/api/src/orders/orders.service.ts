@@ -36,7 +36,6 @@ export class OrdersService {
     private readonly clock: Clock,
   ) {}
 
-  // Writes
   private async writeLines(tx: Tx, orderId: string, built: BuiltOrder) {
     for (const line of built.lines) {
       const { combinations, ...lineData } = line;
@@ -233,7 +232,6 @@ export class OrdersService {
     });
   }
 
-  // Reads
   async list(q: OrderListQuery): Promise<Page<unknown>> {
     const where: Prisma.OrderWhereInput = {
       ...(q.status ? { status: q.status } : {}),
