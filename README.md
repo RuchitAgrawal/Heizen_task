@@ -2,7 +2,7 @@
 
 Internal admin panel for a commercial kitchen that runs corporate meal programmes. Staff set up the catalogue, pricing, companies and employees, take orders on employees' behalf, cook, dispatch, deliver and bill each company.
 
-**Live app**: _link added at deployment_
+**Live app**: https://heizen-task.vercel.app/
 
 | Role | Email | Password |
 | --- | --- | --- |
