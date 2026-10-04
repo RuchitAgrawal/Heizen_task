@@ -4,6 +4,8 @@ Internal admin panel for a commercial kitchen that runs corporate meal programme
 
 **Live app**: https://heizen-task.vercel.app/
 
+**Deployed on**: Vercel (Next.js frontend) · Render (NestJS API) · Neon (Postgres, serverless)
+
 | Role | Email | Password |
 | --- | --- | --- |
 | Admin | admin@test.com | Test@1234 |
