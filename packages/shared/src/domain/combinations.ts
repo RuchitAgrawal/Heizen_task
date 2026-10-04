@@ -1,4 +1,4 @@
-import { Cents } from './money';
+import { Cents, multiplyCents, sumCents } from './money';
 
 export interface GroupRule {
   id: string;
@@ -43,7 +43,7 @@ export function validateCombinations(
   if (combinations.length === 0) {
     issues.push({ path: 'combinations', message: 'Add at least one combination' });
   }
-  const byId = new Map(groups.map((g) => [g.id, g]));
+  const byId = new Map(groups.map((g) => [g.id, { ...g, optionIds: new Set(g.optionIds) }]));
   let total = 0;
   const seenSignatures = new Set<string>();
 
@@ -60,7 +60,7 @@ export function validateCombinations(
       if (!g) return issues.push({ path: `${at}.choices.${j}`, message: 'Option group does not belong to this dish' });
       if (answered.has(g.id)) return issues.push({ path: `${at}.choices.${j}`, message: `Pick one option for "${g.name}"` });
       answered.add(g.id);
-      if (!g.optionIds.includes(c.optionId)) {
+      if (!g.optionIds.has(c.optionId)) {
         issues.push({ path: `${at}.choices.${j}`, message: `Option is not offered in "${g.name}"` });
       }
       if (g.usesPortions && (!c.portionSizeId || !g.portionExtras.has(c.portionSizeId))) {
@@ -101,6 +101,6 @@ export function priceCombination(dishCents: Cents, choiceCents: readonly Cents[]
   unitCents: Cents;
   totalCents: Cents;
 } {
-  const unitCents = choiceCents.reduce((a, b) => a + b, dishCents);
-  return { unitCents, totalCents: unitCents * quantity };
+  const unitCents = sumCents([dishCents, ...choiceCents]);
+  return { unitCents, totalCents: multiplyCents(unitCents, quantity) };
 }

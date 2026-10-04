@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import {
-  IsoDate, MenuDish, PERMISSIONS, addDays, cutoffInstant, isWorkingDay, todayIn,
+  IsoDate, MenuDish, PERMISSIONS, addDays, asWeekdays, cutoffInstant, isWorkingDay, todayIn,
 } from '@fernleaf/shared';
 import { PrismaService } from '../common/prisma.service';
 import { Clock } from '../common/clock';
@@ -108,7 +108,7 @@ export class DemoService implements OnApplicationBootstrap {
     for (let date = from; date <= to; date = addDays(date, 1)) {
       if (has.has(date) || !isWorkingDay(date, cutoffs)) continue;
       for (const company of companies) {
-        const cal = { workingDays: company.workingDays, holidays: new Set(company.holidays.map((h) => fromDbDate(h.date))) };
+        const cal = { workingDays: asWeekdays(company.workingDays), holidays: new Set(company.holidays.map((h) => fromDbDate(h.date))) };
         if (!isWorkingDay(date, cal)) continue;
         const rng = rngFor(`${date}:${company.name}`);
         const people = rng.shuffle(company.employees).slice(0, Math.max(2, Math.round(company.employees.length * (0.45 + rng.next() * 0.3))));

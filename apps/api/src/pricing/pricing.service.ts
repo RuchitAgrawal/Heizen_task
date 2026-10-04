@@ -15,6 +15,14 @@ export interface PriceBook {
   option: Map<string, ResolvedPrice>;
 }
 
+interface PricingSnapshot {
+  tiers: Map<string, TierDef & { name: string; isDefault: boolean }>;
+  dishes: { id: string; costCents: number }[];
+  options: { id: string; costCents: number }[];
+  dishPrices: Map<string, Map<string, Cents>>;
+  optionPrices: Map<string, Map<string, Cents>>;
+}
+
 @Injectable()
 export class PricingService {
   constructor(private readonly prisma: PrismaService) {}
@@ -22,6 +30,49 @@ export class PricingService {
   private async tierMap(db: Db): Promise<Map<string, TierDef & { name: string; isDefault: boolean }>> {
     const tiers = await db.priceTier.findMany();
     return new Map(tiers.map((t) => [t.id, t]));
+  }
+
+  private async snapshot(db: Db): Promise<PricingSnapshot> {
+    const [tiers, dishes, options, dishPrices, optionPrices] = await Promise.all([
+      this.tierMap(db),
+      db.dish.findMany({ select: { id: true, costCents: true } }),
+      db.option.findMany({ select: { id: true, costCents: true } }),
+      db.dishPrice.findMany(),
+      db.optionPrice.findMany(),
+    ]);
+    const group = <T extends { tierId: string; cents: number }>(rows: T[], key: (r: T) => string) => {
+      const grouped = new Map<string, Map<string, Cents>>();
+      for (const row of rows) {
+        const prices = grouped.get(key(row)) ?? new Map<string, Cents>();
+        prices.set(row.tierId, row.cents);
+        grouped.set(key(row), prices);
+      }
+      return grouped;
+    };
+    return {
+      tiers,
+      dishes,
+      options,
+      dishPrices: group(dishPrices, (row) => row.dishId),
+      optionPrices: group(optionPrices, (row) => row.optionId),
+    };
+  }
+
+  private resolveBook(tierId: string, snapshot: PricingSnapshot): PriceBook {
+    const tier = snapshot.tiers.get(tierId);
+    if (!tier) throw notFound('Price tier');
+    const empty = new Map<string, Cents>();
+    return {
+      tierId,
+      tierName: tier.name,
+      dish: new Map(snapshot.dishes.map((dish) => [dish.id, resolvePrice(tierId, snapshot.tiers, dish.costCents, snapshot.dishPrices.get(dish.id) ?? empty)])),
+      option: new Map(snapshot.options.map((option) => [option.id, resolvePrice(tierId, snapshot.tiers, option.costCents, snapshot.optionPrices.get(option.id) ?? empty)])),
+    };
+  }
+
+  async priceBooks(tierIds: readonly string[], db: Db = this.prisma): Promise<Map<string, PriceBook>> {
+    const snapshot = await this.snapshot(db);
+    return new Map(tierIds.map((tierId) => [tierId, this.resolveBook(tierId, snapshot)]));
   }
 
   async defaultTier(db: Db = this.prisma) {
@@ -45,35 +96,7 @@ export class PricingService {
    * menu and order pricing on exactly the same code path.
    */
   async priceBook(tierId: string, db: Db = this.prisma): Promise<PriceBook> {
-    const [tiers, dishes, options, dishPrices, optionPrices] = await Promise.all([
-      this.tierMap(db),
-      db.dish.findMany({ select: { id: true, costCents: true } }),
-      db.option.findMany({ select: { id: true, costCents: true } }),
-      db.dishPrice.findMany(),
-      db.optionPrice.findMany(),
-    ]);
-    const tier = tiers.get(tierId);
-    if (!tier) throw notFound('Price tier');
-
-    const group = <T extends { tierId: string; cents: number }>(rows: T[], key: (r: T) => string) => {
-      const m = new Map<string, Map<string, Cents>>();
-      for (const r of rows) {
-        const k = key(r);
-        if (!m.has(k)) m.set(k, new Map());
-        m.get(k)!.set(r.tierId, r.cents);
-      }
-      return m;
-    };
-    const dp = group(dishPrices, (r) => r.dishId);
-    const op = group(optionPrices, (r) => r.optionId);
-    const empty = new Map<string, Cents>();
-
-    return {
-      tierId,
-      tierName: tier.name,
-      dish: new Map(dishes.map((d) => [d.id, resolvePrice(tierId, tiers, d.costCents, dp.get(d.id) ?? empty)])),
-      option: new Map(options.map((o) => [o.id, resolvePrice(tierId, tiers, o.costCents, op.get(o.id) ?? empty)])),
-    };
+    return this.resolveBook(tierId, await this.snapshot(db));
   }
 
   async listTiers() {
@@ -83,13 +106,12 @@ export class PricingService {
     });
     const activeDishes = await this.prisma.dish.findMany({ where: { active: true }, select: { id: true } });
     // Missing-price count per tier, so gaps are visible from the tier list.
-    return Promise.all(
-      tiers.map(async (t) => {
-        const book = await this.priceBook(t.id);
+    const books = await this.priceBooks(tiers.map((tier) => tier.id));
+    return tiers.map((t) => {
+        const book = books.get(t.id)!;
         const missing = activeDishes.filter((d) => book.dish.get(d.id)?.cents == null).length;
         return { ...t, missingDishPrices: missing };
-      }),
-    );
+      });
   }
 
   private async checkTier(id: string | null, input: TierInput, db: Db) {

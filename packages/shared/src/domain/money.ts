@@ -1,16 +1,19 @@
 /** All money is integer cents. Multipliers are integer basis points (1.0 = 10_000). */
 export type Cents = number;
+export const POSTGRES_INT_MAX = 2_147_483_647;
 
 export const BP_ONE = 10_000;
 
 export function assertCents(value: number): Cents {
-  if (!Number.isSafeInteger(value)) throw new Error(`Not an integer cent amount: ${value}`);
+  if (!Number.isSafeInteger(value) || Math.abs(value) > POSTGRES_INT_MAX) {
+    throw new Error(`Cent amount is outside the supported range: ${value}`);
+  }
   return value;
 }
 
 /** ceil(a / b) for non-negative integers, without going through floats. */
-function ceilDiv(a: number, b: number): number {
-  return Math.floor((a + b - 1) / b);
+function ceilDiv(a: bigint, b: bigint): bigint {
+  return (a + b - 1n) / b;
 }
 
 /** base × (bp / 10_000), rounded up to the next 5 cents. 211 → 215, 215 → 215. */
@@ -18,11 +21,19 @@ export function deriveRoundedUp5(baseCents: Cents, multiplierBp: number): Cents 
   assertCents(baseCents);
   assertCents(multiplierBp);
   if (baseCents < 0 || multiplierBp < 0) throw new Error('Negative price derivation');
-  return ceilDiv(baseCents * multiplierBp, BP_ONE * 5) * 5;
+  const result = ceilDiv(BigInt(baseCents) * BigInt(multiplierBp), BigInt(BP_ONE * 5)) * 5n;
+  return assertCents(Number(result));
 }
 
 export function sumCents(values: readonly Cents[]): Cents {
-  return values.reduce((acc, v) => acc + assertCents(v), 0);
+  const total = values.reduce((acc, v) => acc + BigInt(assertCents(v)), 0n);
+  return assertCents(Number(total));
+}
+
+export function multiplyCents(value: Cents, quantity: number): Cents {
+  assertCents(value);
+  if (!Number.isSafeInteger(quantity) || quantity < 0) throw new Error(`Invalid quantity: ${quantity}`);
+  return assertCents(Number(BigInt(value) * BigInt(quantity)));
 }
 
 export function formatCents(cents: Cents): string {

@@ -8,8 +8,9 @@ export const orderLineSchema = z.object({
   dishId: id,
   quantity: z.number().int().min(1).max(500),
   combinations: z
-    .array(z.object({ quantity: z.number().int().min(1), choices: z.array(choiceSchema) }))
-    .min(1, 'Add at least one combination'),
+    .array(z.object({ quantity: z.number().int().min(1).max(500), choices: z.array(choiceSchema).max(50) }))
+    .min(1, 'Add at least one combination')
+    .max(500, 'Too many combinations'),
 });
 
 export const orderDraftSchema = z.object({

@@ -105,9 +105,10 @@ export class DashboardsService {
     const tiers = await this.prisma.priceTier.findMany({ include: { _count: { select: { companies: true } } } });
     const inUse = tiers.filter((t) => t.isDefault || t._count.companies > 0);
     const activeDishes = await this.prisma.dish.findMany({ where: { active: true }, select: { id: true } });
+    const books = await this.pricing.priceBooks(inUse.map((tier) => tier.id));
     const gaps = [];
     for (const t of inUse) {
-      const book = await this.pricing.priceBook(t.id);
+      const book = books.get(t.id)!;
       gaps.push({ tierId: t.id, tier: t.name, missing: activeDishes.filter((x) => book.dish.get(x.id)?.cents == null).length });
     }
 

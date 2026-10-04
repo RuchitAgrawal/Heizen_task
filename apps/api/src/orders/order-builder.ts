@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import {
   CombinationInput, GroupRule, IsoDate, MenuDish, OrderDraftInput, combinationSignature, cutoffInstant,
   formatMinutes, isWorkingDay, plannedTimes, priceCombination, validateCombinations, todayIn,
+  asWeekdays, sumCents,
 } from '@fernleaf/shared';
 import type { Tx } from '../common/prisma.service';
 import { Clock } from '../common/clock';
@@ -93,7 +94,7 @@ export class OrderBuilder {
     const cutoffSettings = await this.settings.cutoffSettings(tx);
     const date = input.deliveryDate;
     const today = todayIn(settings.timeZone, this.clock.now());
-    const companyCal = { workingDays: company.workingDays, holidays: new Set(company.holidays.map((h) => fromDbDate(h.date))) };
+    const companyCal = { workingDays: asWeekdays(company.workingDays), holidays: new Set(company.holidays.map((h) => fromDbDate(h.date))) };
     if (date < today && !override) errors.deliveryDate = 'Delivery date is in the past';
     else if (!isWorkingDay(date, companyCal)) errors.deliveryDate = `${company.name} does not take deliveries on this day`;
     else if (!isWorkingDay(date, cutoffSettings)) errors.deliveryDate = 'The kitchen is closed on this day';
@@ -156,7 +157,13 @@ export class OrderBuilder {
       }
       if (Object.keys(errors).some((k) => k.startsWith(`${at}.`))) return;
 
-      const combinations = line.combinations.map((c) => priceCombo(dish, row.stationId, c));
+      let combinations: BuiltCombination[];
+      try {
+        combinations = line.combinations.map((c) => priceCombo(dish, row.stationId, c));
+      } catch {
+        errors[`${at}.quantity`] = 'This line total is too large';
+        return;
+      }
       lines.push({
         dishId: dish.id,
         dishName: dish.name,
@@ -166,7 +173,7 @@ export class OrderBuilder {
         stationName: row.stationId ? (stations.get(row.stationId) ?? null) : null,
         dishPriceCents: dish.priceCents,
         quantity: line.quantity,
-        totalCents: combinations.reduce((a, c) => a + c.totalCents, 0),
+        totalCents: sumCents(combinations.map((c) => c.totalCents)),
         sortOrder: i,
         combinations,
       });
@@ -175,6 +182,12 @@ export class OrderBuilder {
     if (Object.keys(errors).length) throw invalid('Some parts of the order need attention', errors);
 
     const planned = plannedTimes(date, deliveryTimeMin, settings.timeZone, company.deliveryLeadMin, settings.kitchenBufferMin);
+    let totalCents: number;
+    try {
+      totalCents = sumCents(lines.map((l) => l.totalCents));
+    } catch {
+      throw invalid('The order total is too large', { lines: 'Reduce quantities or split this into multiple orders' });
+    }
     return {
       employeeId: employee.id,
       companyId: company.id,
@@ -187,7 +200,7 @@ export class OrderBuilder {
       notes: input.notes,
       priceTierId: menu.tier.id,
       priceTierName: menu.tier.name,
-      totalCents: lines.reduce((a, l) => a + l.totalCents, 0),
+      totalCents,
       ...planned,
       defaultDriverId: company.defaultDriverId,
       lines,

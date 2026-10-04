@@ -120,6 +120,8 @@ export class BillingService {
 
   async addAdjustment(input: { orderId: string; amountCents: number; reason: string }, user: AuthUser) {
     return this.prisma.$transaction(async (tx) => {
+      const [locked] = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM "Order" WHERE id = ${input.orderId} FOR UPDATE`;
+      if (!locked) throw notFound('Order');
       const order = await tx.order.findUnique({ where: { id: input.orderId } });
       if (!order) throw notFound('Order');
       if (!(BILLABLE_STATUSES as readonly string[]).includes(order.status) && !order.invoiceId) {

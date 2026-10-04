@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { KitchenSettings } from '@prisma/client';
-import { CutoffSettings, IsoDate, SettingsInput, cutoffInstant, todayIn } from '@fernleaf/shared';
+import { CutoffSettings, IsoDate, SettingsInput, asWeekdays, cutoffInstant, todayIn } from '@fernleaf/shared';
 import { PrismaService, Tx } from '../common/prisma.service';
 import { Clock } from '../common/clock';
 import { fromDbDate, toDbDate } from '../common/dates';
@@ -26,7 +26,7 @@ export class SettingsService {
     return {
       cutoffDays: s.cutoffDays,
       cutoffTimeMin: s.cutoffTimeMin,
-      workingDays: s.workingDays,
+      workingDays: asWeekdays(s.workingDays),
       timeZone: s.timeZone,
       holidays: new Set(holidays.map((h) => fromDbDate(h.date))),
     };

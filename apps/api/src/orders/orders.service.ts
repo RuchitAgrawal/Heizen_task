@@ -40,13 +40,13 @@ export class OrdersService {
   private async writeLines(tx: Tx, orderId: string, built: BuiltOrder) {
     for (const line of built.lines) {
       const { combinations, ...lineData } = line;
-      const created = await tx.orderLine.create({ data: { ...lineData, orderId } });
-      for (const combo of combinations) {
-        const { choices, ...comboData } = combo;
-        await tx.orderCombination.create({
-          data: { ...comboData, orderId, lineId: created.id, choices: { create: choices } },
-        });
-      }
+      await tx.orderLine.create({
+        data: {
+          ...lineData,
+          orderId,
+          combinations: { create: combinations.map(({ choices, ...combo }) => ({ ...combo, orderId, choices: { create: choices } })) },
+        },
+      });
     }
   }
 

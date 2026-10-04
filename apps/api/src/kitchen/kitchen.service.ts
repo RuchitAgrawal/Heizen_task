@@ -80,19 +80,21 @@ export class KitchenService {
       batches.set(key, b);
     }
 
-    const stationSummary = [...stations.map((s) => ({ id: s.id, name: s.name })), { id: UNASSIGNED, name: 'Unassigned' }].map((s) => {
-      const mine = rows.filter((r) => r.stationId === s.id);
-      return {
-        ...s,
-        units: mine.length,
-        portions: mine.reduce((a, r) => a + r.quantity, 0),
-        notStarted: mine.filter((r) => !r.startedAt).length,
-        inProgress: mine.filter((r) => r.startedAt && !r.doneAt).length,
-        done: mine.filter((r) => r.doneAt).length,
-        late: mine.filter((r) => r.urgency === 'LATE').length,
-        atRisk: mine.filter((r) => r.urgency === 'AT_RISK').length,
-      };
-    });
+    const stationCounts = new Map<string, { units: number; portions: number; notStarted: number; inProgress: number; done: number; late: number; atRisk: number }>();
+    for (const row of rows) {
+      const counts = stationCounts.get(row.stationId) ?? { units: 0, portions: 0, notStarted: 0, inProgress: 0, done: 0, late: 0, atRisk: 0 };
+      counts.units++;
+      counts.portions += row.quantity;
+      if (!row.startedAt) counts.notStarted++;
+      else if (!row.doneAt) counts.inProgress++;
+      if (row.doneAt) counts.done++;
+      if (row.urgency === 'LATE') counts.late++;
+      if (row.urgency === 'AT_RISK') counts.atRisk++;
+      stationCounts.set(row.stationId, counts);
+    }
+    const emptyCounts = () => ({ units: 0, portions: 0, notStarted: 0, inProgress: 0, done: 0, late: 0, atRisk: 0 });
+    const stationSummary = [...stations.map((s) => ({ id: s.id, name: s.name })), { id: UNASSIGNED, name: 'Unassigned' }]
+      .map((station) => ({ ...station, ...(stationCounts.get(station.id) ?? emptyCounts()) }));
 
     return { date, now, units: rows, batches: [...batches.values()].sort((a, b) => +a.earliestDue - +b.earliestDue), stations: stationSummary };
   }

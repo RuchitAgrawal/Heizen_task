@@ -11,8 +11,13 @@ export const WEEKDAY_LABELS: Record<Weekday, string> = {
 export type IsoDate = string;
 
 export interface WorkCalendar {
-  workingDays: readonly number[];
+  workingDays: readonly Weekday[];
   holidays: ReadonlySet<IsoDate>;
+}
+
+export function asWeekdays(values: readonly number[]): Weekday[] {
+  if (values.some((value) => !Number.isInteger(value) || value < 1 || value > 7)) throw new Error('Working days must be ISO weekdays 1 through 7');
+  return [...new Set(values)] as Weekday[];
 }
 
 export function parseIsoDate(date: IsoDate): DateTime {
@@ -33,7 +38,7 @@ export function isWorkingDay(date: IsoDate, cal: WorkCalendar): boolean {
   return cal.workingDays.includes(weekdayOf(date)) && !cal.holidays.has(date);
 }
 
-/** Wall-clock time in a zone → UTC instant. Handles DST via Luxon. */
+/** Wall-clock time in a zone → UTC instant. Rejects spring gaps; a repeated fall time uses its earlier occurrence. */
 export function zonedInstant(date: IsoDate, minutesAfterMidnight: number, timeZone: string): Date {
   const d = parseIsoDate(date);
   const dt = DateTime.fromObject(
@@ -41,6 +46,9 @@ export function zonedInstant(date: IsoDate, minutesAfterMidnight: number, timeZo
     { zone: timeZone },
   );
   if (!dt.isValid) throw new Error(`Invalid zoned time ${date} ${minutesAfterMidnight} ${timeZone}`);
+  if (dt.year !== d.year || dt.month !== d.month || dt.day !== d.day || dt.hour !== Math.floor(minutesAfterMidnight / 60) || dt.minute !== minutesAfterMidnight % 60) {
+    throw new Error(`Nonexistent local time ${date} ${minutesAfterMidnight} ${timeZone}`);
+  }
   return dt.toJSDate();
 }
 
