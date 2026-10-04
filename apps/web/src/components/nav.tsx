@@ -61,10 +61,25 @@ export function Nav() {
           </Link>
         ))}
       </nav>
-      <div className="mt-auto text-sm">
-        <div className="font-medium text-stone-900">{me.name}</div>
-        <div className="text-xs text-stone-500">{me.role.name}</div>
-        <button onClick={signOut} className="mt-2 text-xs text-stone-600 underline-offset-2 hover:underline">Sign out</button>
+      <div className="mt-auto border-t border-stone-200 pt-3">
+        <div className="flex items-center gap-2.5">
+          <div
+            aria-hidden="true"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-800 text-xs font-semibold text-white"
+          >
+            {me.name.charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-medium text-stone-900">{me.name}</div>
+            <div className="truncate text-xs text-stone-500">{me.role.name}</div>
+          </div>
+        </div>
+        <button
+          onClick={signOut}
+          className="mt-2 text-xs text-stone-500 underline-offset-2 hover:text-stone-800 hover:underline"
+        >
+          Sign out
+        </button>
       </div>
     </aside>
   );
