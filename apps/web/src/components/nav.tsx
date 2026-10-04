@@ -51,6 +51,7 @@ export function Nav() {
           <Link
             key={l.href}
             href={l.href}
+            aria-current={path.startsWith(l.href) ? 'page' : undefined}
             className={clsx(
               'rounded-md px-2.5 py-1.5 text-sm',
               path.startsWith(l.href) ? 'bg-emerald-100 font-medium text-emerald-950' : 'text-stone-700 hover:bg-stone-100',

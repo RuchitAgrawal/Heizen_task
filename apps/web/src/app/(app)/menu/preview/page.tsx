@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { EmployeeMenu, Page } from '@fernleaf/shared';
 import { api } from '@/lib/api';
+import { useDebouncedValue } from '@/lib/debounce';
 import { money } from '@/lib/format';
 import { Chip, Field, Input, Loading, PageHeader, Section } from '@/components/ui';
 
@@ -11,9 +12,10 @@ interface EmployeeRow { id: string; name: string; email: string; company: { name
 
 export default function MenuPreview() {
   const [search, setSearch] = useState('');
+  const employeeSearch = useDebouncedValue(search);
   const [employee, setEmployee] = useState<EmployeeRow | null>(null);
   const [slug, setSlug] = useState('');
-  const employees = useQuery({ queryKey: ['employees', 'search', search], queryFn: () => api<Page<EmployeeRow>>('/employees', { query: { q: search, pageSize: 8 } }), enabled: !employee });
+  const employees = useQuery({ queryKey: ['employees', 'search', employeeSearch], queryFn: ({ signal }) => api<Page<EmployeeRow>>('/employees', { query: { q: employeeSearch, pageSize: 8 }, signal }), enabled: !employee });
   const menu = useQuery({
     queryKey: ['menu-preview', employee?.id, slug],
     queryFn: () => api<EmployeeMenu>('/menu/preview', { query: { employeeId: employee!.id, categorySlug: slug || undefined } }),

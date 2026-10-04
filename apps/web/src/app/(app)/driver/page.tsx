@@ -12,13 +12,21 @@ import { STAGE_LABEL, STAGE_TONE } from '@/components/stages';
 
 /** Shrinks a phone photo to at most 1280 px JPEG so it fits the request limit. */
 async function compress(file: File): Promise<string> {
+  if (!file.type.startsWith('image/')) throw new Error('Choose an image file');
+  if (file.size > 20_000_000) throw new Error('Photo must be smaller than 20 MB');
   const img = await createImageBitmap(file);
-  const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.round(img.width * scale);
-  canvas.height = Math.round(img.height * scale);
-  canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL('image/jpeg', 0.75);
+  try {
+    const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('This browser cannot process the photo');
+    context.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.75);
+  } finally {
+    img.close();
+  }
 }
 
 export default function DriverPage() {
@@ -43,6 +51,8 @@ function DropCard({ drop: d }: { drop: Drop }) {
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState('');
   const [photo, setPhoto] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [compressing, setCompressing] = useState(false);
   const act = useAction(() => post(`/dispatch/drops/${d.id}/deliver`, { note, photoDataUrl: photo }), { invalidate: [['driver']], onSuccess: () => setOpen(false) });
   const addr = [d.address.line1, d.address.line2, `${d.address.city} ${d.address.postalCode}`].filter(Boolean).join(', ');
 
@@ -73,14 +83,20 @@ function DropCard({ drop: d }: { drop: Drop }) {
         ) : (
           <div className="flex flex-col gap-3">
             <Field label="Note (optional)" error={act.fieldErrors.note}><Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Left with reception" /></Field>
-            <Field label="Photo (optional)" error={act.fieldErrors.photoDataUrl}>
-              <input type="file" accept="image/*" capture="environment" onChange={async (e) => { const f = e.target.files?.[0]; setPhoto(f ? await compress(f) : null); }} className="text-sm" />
+            <Field label="Photo (optional)" error={photoError ?? act.fieldErrors.photoDataUrl}>
+              <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={async (e) => {
+                const file = e.target.files?.[0];
+                setPhotoError(null);
+                if (!file) return setPhoto(null);
+                setCompressing(true);
+                try { setPhoto(await compress(file)); } catch (error) { setPhoto(null); setPhotoError(error instanceof Error ? error.message : 'Could not process photo'); } finally { setCompressing(false); }
+              }} className="text-sm" />
             </Field>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             {photo && <img src={photo} alt="Delivery photo preview" className="max-h-48 rounded-md object-contain" />}
             <ErrorText>{act.error}</ErrorText>
             <div className="flex gap-2">
-              <Button variant="primary" className="h-12 flex-1 text-base" disabled={act.isPending} onClick={() => act.run(undefined)}>{act.isPending ? 'Saving…' : 'Confirm delivery'}</Button>
+              <Button variant="primary" className="h-12 flex-1 text-base" disabled={act.isPending || compressing} onClick={() => act.run(undefined)}>{compressing ? 'Processing photo…' : act.isPending ? 'Saving…' : 'Confirm delivery'}</Button>
               <Button className="h-12" onClick={() => setOpen(false)}>Back</Button>
             </div>
           </div>

@@ -2,7 +2,7 @@
 
 import clsx from 'clsx';
 import Link from 'next/link';
-import { forwardRef } from 'react';
+import { cloneElement, forwardRef, isValidElement, useId } from 'react';
 
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost';
 
@@ -60,11 +60,17 @@ export function Check({ label, ...p }: React.InputHTMLAttributes<HTMLInputElemen
 }
 
 export function Field({ label, error, hint, children, className }: { label: string; error?: string; hint?: string; children: React.ReactNode; className?: string }) {
+  const id = useId();
+  const descriptionId = error || hint ? `${id}-description` : undefined;
+  const controlId = isValidElement<{ id?: string }>(children) ? children.props.id ?? id : id;
+  const child = isValidElement<{ id?: string; 'aria-invalid'?: boolean; 'aria-describedby'?: string }>(children)
+    ? cloneElement(children, { id: controlId, 'aria-invalid': !!error, 'aria-describedby': descriptionId })
+    : children;
   return (
-    <label className={clsx('flex flex-col gap-1', className)}>
+    <label htmlFor={controlId} className={clsx('flex flex-col gap-1', className)}>
       <span className="text-xs font-medium text-stone-600">{label}</span>
-      {children}
-      {error ? <span className="text-xs text-red-700">{error}</span> : hint ? <span className="text-xs text-stone-500">{hint}</span> : null}
+      {child}
+      {error ? <span id={descriptionId} className="text-xs text-red-700">{error}</span> : hint ? <span id={descriptionId} className="text-xs text-stone-500">{hint}</span> : null}
     </label>
   );
 }

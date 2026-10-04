@@ -26,7 +26,7 @@ Internal admin panel for a commercial kitchen that runs corporate meal programme
 
 ## Local setup
 
-Needs Node 22+ and pnpm 10+. No Docker: a local Postgres runs from an npm package.
+Needs Node 22+ and pnpm 11+. No Docker: a local Postgres runs from an npm package.
 
 ```bash
 pnpm install

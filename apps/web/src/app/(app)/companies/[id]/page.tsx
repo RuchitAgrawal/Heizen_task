@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Page, WEEKDAY_LABELS, WEEKDAYS, parseHhMm } from '@fernleaf/shared';
 import { api, del, post, put } from '@/lib/api';
 import { useAction } from '@/lib/forms';
+import { useDebouncedValue } from '@/lib/debounce';
 import { day, hhmm } from '@/lib/format';
 import { useSession } from '@/lib/session';
 import type { CompanyDetail, Named, Reference } from '@/lib/types';
@@ -21,13 +22,19 @@ export default function CompanyPage({ params }: { params: Promise<{ id: string }
   const router = useRouter();
   const { can } = useSession();
   const editable = can('companies.write');
+  const [ownerSearch, setOwnerSearch] = useState('');
+  const debouncedOwnerSearch = useDebouncedValue(ownerSearch);
   const company = useQuery({ queryKey: ['company', id], queryFn: () => api<CompanyDetail>(`/companies/${id}`), enabled: !isNew });
   const ref = useQuery({ queryKey: ['reference'], queryFn: () => api<Reference>('/reference') });
   const tiers = useQuery({ queryKey: ['tiers'], queryFn: () => api<(Named & { isDefault: boolean })[]>('/pricing/tiers') });
   const drivers = useQuery({ queryKey: ['drivers'], queryFn: () => api<Named[]>('/staff/drivers') });
   const cats = useQuery({ queryKey: ['categories'], queryFn: () => api<Named[]>('/menu/categories'), enabled: can('menu.read') });
   const dishes = useQuery({ queryKey: ['dishes'], queryFn: () => api<(Named & { active: boolean })[]>('/catalog/dishes'), enabled: can('catalog.read') });
-  const employees = useQuery({ queryKey: ['employees', 'company', id], queryFn: () => api<Page<Named>>('/employees', { query: { companyId: id, pageSize: 100 } }), enabled: !isNew });
+  const employees = useQuery({
+    queryKey: ['employees', 'company', id, debouncedOwnerSearch],
+    queryFn: ({ signal }) => api<Page<Named>>('/employees', { query: { companyId: id, q: debouncedOwnerSearch, pageSize: 100 }, signal }),
+    enabled: !isNew,
+  });
 
   const [f, setF] = useState({
     name: '', domains: '', billingName: '', billingEmail: '', billingPhone: '', ownerEmployeeId: '', workingDays: [1, 2, 3, 4, 5] as number[],
@@ -80,10 +87,13 @@ export default function CompanyPage({ params }: { params: Promise<{ id: string }
             <Field label="Billing email" error={fe.billingEmail}><Input value={f.billingEmail} onChange={(e) => set({ billingEmail: e.target.value })} /></Field>
             <Field label="Billing phone"><Input value={f.billingPhone} onChange={(e) => set({ billingPhone: e.target.value })} /></Field>
             <Field label="Owner" error={fe.ownerEmployeeId} hint={isNew ? 'Add employees first, then pick the owner.' : undefined}>
+              <div className="flex flex-col gap-1">
+              <Input value={ownerSearch} disabled={isNew} onChange={(e) => setOwnerSearch(e.target.value)} placeholder="Search employees" />
               <Select value={f.ownerEmployeeId} disabled={isNew} onChange={(e) => set({ ownerEmployeeId: e.target.value })}>
                 <option value="">None yet</option>
                 {employees.data?.items.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
               </Select>
+              </div>
             </Field>
           </div>
         </Section>
@@ -91,9 +101,10 @@ export default function CompanyPage({ params }: { params: Promise<{ id: string }
         <Section title="Delivery addresses">
           <div className="flex flex-col gap-4">
             {f.addresses.map((a, i) => (
-              <div key={a.id ?? `new${i}`} className="grid items-end gap-2 sm:grid-cols-[8rem_1fr_8rem_7rem_7rem_auto]">
+              <div key={a.id ?? `new${i}`} className="grid items-end gap-2 sm:grid-cols-[8rem_1fr_1fr_8rem_7rem_7rem_auto]">
                 <Field label="Label" error={fe[`addresses.${i}.label`]}><Input value={a.label} onChange={(e) => setAddr(i, { label: e.target.value })} /></Field>
                 <Field label="Street" error={fe[`addresses.${i}.line1`]}><Input value={a.line1} onChange={(e) => setAddr(i, { line1: e.target.value })} /></Field>
+                <Field label="Suite / floor" error={fe[`addresses.${i}.line2`]}><Input value={a.line2} onChange={(e) => setAddr(i, { line2: e.target.value })} /></Field>
                 <Field label="City" error={fe[`addresses.${i}.city`]}><Input value={a.city} onChange={(e) => setAddr(i, { city: e.target.value })} /></Field>
                 <Field label="Postal code" error={fe[`addresses.${i}.postalCode`]}><Input value={a.postalCode} onChange={(e) => setAddr(i, { postalCode: e.target.value })} /></Field>
                 <div className="pb-2"><Check label="Default" checked={a.isDefault} onChange={(e) => setAddr(i, { isDefault: e.target.checked })} /></div>

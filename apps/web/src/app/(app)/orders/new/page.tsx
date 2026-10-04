@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { EmployeeMenu, MenuDish, Page, addDays, parseHhMm, priceCombination } from '@fernleaf/shared';
 import { api, put, post } from '@/lib/api';
+import { useDebouncedValue } from '@/lib/debounce';
 import { useAction } from '@/lib/forms';
 import { day, hhmm, money } from '@/lib/format';
 import { useSession } from '@/lib/session';
@@ -28,6 +29,7 @@ function OrderForm() {
   const existing = useQuery({ queryKey: ['order', editId], queryFn: () => api<OrderDetail>(`/orders/${editId}`), enabled: !!editId });
   const [employeeId, setEmployeeId] = useState(params.get('employee') ?? '');
   const [search, setSearch] = useState('');
+  const employeeSearch = useDebouncedValue(search);
   const [deliveryDate, setDate] = useState(addDays(clock.today, 3));
   const [addressId, setAddressId] = useState('');
   const [timeStr, setTimeStr] = useState('');
@@ -58,8 +60,8 @@ function OrderForm() {
   }, [existing.data, loaded]);
 
   const employees = useQuery({
-    queryKey: ['employees', 'search', search],
-    queryFn: () => api<Page<EmployeeRow>>('/employees', { query: { q: search, pageSize: 12 } }),
+    queryKey: ['employees', 'search', employeeSearch],
+    queryFn: ({ signal }) => api<Page<EmployeeRow>>('/employees', { query: { q: employeeSearch, pageSize: 12 }, signal }),
     enabled: !employeeId,
   });
   const employee = useQuery({ queryKey: ['employee', employeeId], queryFn: () => api<EmployeeRow>(`/employees/${employeeId}`), enabled: !!employeeId });

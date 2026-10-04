@@ -7,5 +7,4 @@ dist
 .dev-db
 coverage
 next-env.d.ts
-.dev-db
 .playwright-mcp

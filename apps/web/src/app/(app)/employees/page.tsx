@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { CsvImportResult, Page } from '@fernleaf/shared';
 import { api, post } from '@/lib/api';
+import { useDebouncedValue } from '@/lib/debounce';
 import { useAction } from '@/lib/forms';
 import { useSession } from '@/lib/session';
 import type { Named } from '@/lib/types';
@@ -19,12 +20,13 @@ function EmployeesList() {
   const { can } = useSession();
   const companyId = params.get('companyId') ?? '';
   const [q, setQ] = useState('');
+  const debouncedQuery = useDebouncedValue(q);
   const [page, setPage] = useState(1);
   const [importing, setImporting] = useState(false);
   const companies = useQuery({ queryKey: ['companies'], queryFn: () => api<Named[]>('/companies') });
   const list = useQuery({
-    queryKey: ['employees', { companyId, q, page }],
-    queryFn: () => api<Page<Row>>('/employees', { query: { companyId, q, page, pageSize: 25 } }),
+    queryKey: ['employees', { companyId, q: debouncedQuery, page }],
+    queryFn: ({ signal }) => api<Page<Row>>('/employees', { query: { companyId, q: debouncedQuery, page, pageSize: 25 }, signal }),
     placeholderData: keepPreviousData,
   });
 
